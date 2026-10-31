@@ -21,9 +21,40 @@ public sealed record VisitPassDto(
     int UseCount,
     string Status,
     string? HostUnitNumber = null,
-    string? OrganizationName = null);
+    string? OrganizationName = null,
+    string PublicToken = "");
 
 public sealed record CreateVisitPassResult(VisitPassDto Pass, string Otp);
+
+/// <summary>
+/// The safe, no-login view of a pass for the PUBLIC shareable page. Deliberately excludes PII
+/// (phone/email) and the OTP. `PhotoDataUrl` is the visitor photo inlined as a data URL so the
+/// anonymous page needs no authorized file call. `IsValidNow` reflects the window/status at fetch.
+/// </summary>
+public sealed record PublicVisitPassDto(
+    string VisitorName,
+    string? PhotoDataUrl,
+    string QrToken,
+    DateTime ValidFromUtc,
+    DateTime ValidUntilUtc,
+    string Status,
+    bool IsValidNow,
+    int? NumberOfPersons,
+    string? WhomToMeet,
+    string? VehicleNumber,
+    string? HostUnitNumber,
+    string? CommunityName,
+    string? OrganizationName);
+
+/// <summary>Which channels to send the public pass link on (admin-triggered share). At least one.</summary>
+public sealed record SharePassRequest(
+    bool Sms = false,
+    bool WhatsApp = false,
+    bool Email = false,
+    string? ToPhone = null,
+    string? ToEmail = null);
+
+public sealed record SharePassResult(string PublicUrl, bool SmsQueued, bool WhatsAppQueued, bool EmailQueued);
 
 public sealed record VisitorDto(
     Guid Id,

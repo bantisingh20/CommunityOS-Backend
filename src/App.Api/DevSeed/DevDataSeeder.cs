@@ -239,6 +239,10 @@ public static class DevDataSeeder
             (PermissionAction.Create, "TicketComment"),
             (PermissionAction.View, "Announcement"),
             (PermissionAction.View, "Community"),
+            (PermissionAction.View, "MaintenanceCharge"),
+            (PermissionAction.View, "MaintenanceBill"),
+            (PermissionAction.View, "MaintenancePayment"),
+            (PermissionAction.Create, "MaintenancePayment"),
             // File_Service upload + download. Residents capture photos (visitor pass, ticket
             // attachment, guard photo) and view them back; without these the multipart upload 403s
             // on Create and the authorized image download 403s on View (photo saves/shows nothing).
@@ -426,6 +430,16 @@ public static class DevDataSeeder
             (PermissionAction.Create, "Announcement"),
             (PermissionAction.Edit, "Announcement"),
             (PermissionAction.Delete, "Announcement"),
+            // Maintenance billing
+            (PermissionAction.View, "MaintenanceCharge"),
+            (PermissionAction.Create, "MaintenanceCharge"),
+            (PermissionAction.Edit, "MaintenanceCharge"),
+            (PermissionAction.View, "MaintenanceBill"),
+            (PermissionAction.Create, "MaintenanceBill"),
+            (PermissionAction.Edit, "MaintenanceBill"),
+            (PermissionAction.View, "MaintenancePayment"),
+            (PermissionAction.Create, "MaintenancePayment"),
+            (PermissionAction.Approve, "MaintenancePayment"),
             // User/role management within community
             (PermissionAction.View, "User"),
             (PermissionAction.Create, "User"),

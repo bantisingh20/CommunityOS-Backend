@@ -57,6 +57,8 @@ public static class UnitEndpoints
                 string? unitType,
                 string? floor,
                 Guid? hierarchyNodeId,
+                Guid? communityId,
+                bool? availableForOwner,
                 int? page,
                 int? pageSize,
                 IUnitService units,
@@ -79,6 +81,10 @@ public static class UnitEndpoints
                 {
                     filters.Add(new FilterTerm("hierarchyNodeId", FilterOperator.Equals, hierarchyNodeId.Value.ToString()));
                 }
+                if (communityId is not null)
+                {
+                    filters.Add(new FilterTerm("communityId", FilterOperator.Equals, communityId.Value.ToString()));
+                }
 
                 var parameters = new ListQueryParameters
                 {
@@ -89,7 +95,7 @@ public static class UnitEndpoints
                     Sort = EndpointSort.Parse(sort),
                 };
 
-                var data = await units.ListAsync(parameters, ct);
+                var data = await units.ListAsync(parameters, availableForOwner ?? false, ct);
                 return Results.Ok(ApiResult<PagedData<UnitDto>>.Ok(data, string.Empty));
             })
             .WithMetadata(new RequirePermissionAttribute(PermissionAction.View, "Unit"));

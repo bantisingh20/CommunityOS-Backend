@@ -48,5 +48,5 @@ public interface IUnitService
     /// the <c>(CommunityId, UnitStatus)</c> index backs the common "units in this community with
     /// status X" filter at scale.
     /// </summary>
-    Task<PagedData<UnitDto>> ListAsync(ListQueryParameters parameters, CancellationToken cancellationToken = default);
+    Task<PagedData<UnitDto>> ListAsync(ListQueryParameters parameters, bool availableForOwner = false, CancellationToken cancellationToken = default);
 }

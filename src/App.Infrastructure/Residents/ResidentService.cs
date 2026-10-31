@@ -154,15 +154,42 @@ public sealed class ResidentService(
         return resident is null ? null : ToDto(resident);
     }
 
-    public Task<PagedData<ResidentDto>> ListAsync(ListQueryParameters parameters, CancellationToken cancellationToken = default)
+    public async Task<PagedData<ResidentDto>> ListAsync(ListQueryParameters parameters, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        // Tenant-scoped by the global query filter (Req 15.4): the caller only sees residents in
-        // their authorized communities. The soft-delete filter excludes archived rows; a
-        // verificationStatus filter rides the (CommunityId, VerificationStatus) index.
-        return db.Residents.AsNoTracking().ToPagedResultAsync(
+        var paged = await db.Residents.AsNoTracking().ToPagedResultAsync(
             parameters, QueryConfig, ToDto, pageSizePolicy, executor, cancellationToken);
+
+        var userIds = paged.Items
+            .Where(r => r.UserId.HasValue)
+            .Select(r => r.UserId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (userIds.Count == 0)
+        {
+            return paged;
+        }
+
+        var statusById = await db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.Status })
+            .ToDictionaryAsync(u => u.Id, u => u.Status.ToString(), cancellationToken);
+
+        var items = paged.Items
+            .Select(r => r.UserId is { } uid && statusById.TryGetValue(uid, out var s)
+                ? r with { LoginStatus = s }
+                : r)
+            .ToList();
+
+        return new PagedData<ResidentDto>
+        {
+            Items = items,
+            Page = paged.Page,
+            PageSize = paged.PageSize,
+            TotalCount = paged.TotalCount,
+        };
     }
 
     public async Task<HouseholdMemberDto> AssociateHouseholdAsync(Guid residentId, AssociateHouseholdRequest request, CancellationToken cancellationToken = default)

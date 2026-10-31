@@ -15,6 +15,7 @@ public static class GateEndpoints
     public static IEndpointRouteBuilder MapGateEndpoints(this IEndpointRouteBuilder app)
     {
         MapVisitPassEndpoints(app);
+        MapPublicPassEndpoints(app);
         MapVisitorEndpoints(app);
         MapEntryExitEndpoints(app);
         MapRecurringVisitorEndpoints(app);
@@ -123,6 +124,37 @@ public static class GateEndpoints
                 return Results.Ok(ApiResult<VisitPassDto>.Ok(dto, string.Empty));
             })
             .WithMetadata(new RequirePermissionAttribute(PermissionAction.View, "VisitPass"));
+
+        // POST /{id}/share — enqueue the public pass link over SMS / WhatsApp / email (Req 23.x).
+        group.MapPost("/{id:guid}/share", async (
+                Guid id,
+                SharePassBody body,
+                IGateService gate,
+                CancellationToken ct) =>
+            {
+                var result = await gate.SharePassAsync(id, new SharePassRequest(
+                    body.Sms, body.WhatsApp, body.Email, body.ToPhone, body.ToEmail), ct);
+                return Results.Ok(ApiResult<SharePassResult>.Ok(result, string.Empty));
+            })
+            .RequireRateLimiting(RateLimitingExtensions.WritePolicy)
+            .WithMetadata(new RequirePermissionAttribute(PermissionAction.Create, "VisitPass"));
+    }
+
+    // --- Public pass (/api/v1/public/visit-passes) — anonymous, token-authorized -----------------
+    private static void MapPublicPassEndpoints(IEndpointRouteBuilder app)
+    {
+        // Anonymous (no RequirePermission metadata). The opaque PublicToken is the authorization;
+        // the DTO excludes PII/OTP and inlines the photo as a data URL.
+        app.MapGet("/api/v1/public/visit-passes/{token}", async (
+                string token,
+                IGateService gate,
+                CancellationToken ct) =>
+            {
+                var dto = await gate.GetPublicPassAsync(token, ct)
+                    ?? throw new NotFoundException("This pass link is invalid or has expired.");
+                return Results.Ok(ApiResult<PublicVisitPassDto>.Ok(dto, string.Empty));
+            })
+            .RequireRateLimiting(RateLimitingExtensions.AuthPolicy);
     }
 
     // --- Walk-ins / visitors (/api/v1/visitors) — Req 24.x ---------------------------------------
@@ -475,6 +507,19 @@ public static class GateEndpoints
 
         [MaxLength(32)]
         public string? Otp { get; init; }
+    }
+
+    public sealed class SharePassBody
+    {
+        public bool Sms { get; init; }
+        public bool WhatsApp { get; init; }
+        public bool Email { get; init; }
+
+        [MaxLength(50)]
+        public string? ToPhone { get; init; }
+
+        [MaxLength(256)]
+        public string? ToEmail { get; init; }
     }
 
     public sealed class ScanAccessBody

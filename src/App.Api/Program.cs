@@ -121,6 +121,8 @@ app.MapMaintenanceEndpoints();
 
 app.MapAmenityEndpoints();
 app.MapParkingEndpoints();
+app.MapMaintenanceBillingEndpoints();
+app.MapMyTasksEndpoints();
 
 
 app.MapAnnouncementEndpoints();

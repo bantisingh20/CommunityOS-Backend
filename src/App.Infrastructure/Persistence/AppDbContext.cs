@@ -136,6 +136,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
 
     public DbSet<Domain.Parking.EvReservation> EvReservations => Set<Domain.Parking.EvReservation>();
 
+    public DbSet<Domain.MaintenanceBilling.MaintenanceCharge> MaintenanceCharges => Set<Domain.MaintenanceBilling.MaintenanceCharge>();
+    public DbSet<Domain.MaintenanceBilling.MaintenanceBill> MaintenanceBills => Set<Domain.MaintenanceBilling.MaintenanceBill>();
+    public DbSet<Domain.MaintenanceBilling.MaintenancePayment> MaintenancePayments => Set<Domain.MaintenanceBilling.MaintenancePayment>();
+
     private bool IsSuperAdmin => _tenant.IsPlatformSuperAdmin;
     private bool IsResidentSelfScoped => _tenant.IsResidentSelfScoped;
     private Guid? ResidentUnitId => _tenant.ResidentUnitId;
@@ -182,6 +186,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ITenantContext
                 .IsUnique()
                 .HasFilter("[EndedAtUtc] IS NULL")
                 .HasDatabaseName("UX_EvReservation_ParkingSlotId_Active");
+
+            modelBuilder.Entity<Domain.MaintenanceBilling.MaintenanceCharge>()
+                .HasIndex(c => c.UnitId)
+                .IsUnique()
+                .HasFilter("[IsActive] = 1 AND [IsDeleted] = 0")
+                .HasDatabaseName("UX_MaintenanceCharge_UnitId_Active");
+
+            modelBuilder.Entity<Domain.MaintenanceBilling.MaintenanceBill>()
+                .HasIndex(b => new { b.UnitId, b.PeriodYear, b.PeriodMonth })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0 AND [UnitId] IS NOT NULL")
+                .HasDatabaseName("UX_MaintenanceBill_UnitId_Period");
         }
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())

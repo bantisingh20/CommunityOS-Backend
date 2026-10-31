@@ -18,7 +18,8 @@ public sealed record ResidentDto(
     DateOnly? MoveInDate = null,
     string? GovtIdType = null,
     string? GovtIdFrontFileId = null,
-    string? GovtIdBackFileId = null);
+    string? GovtIdBackFileId = null,
+    string? LoginStatus = null);
 
 
 public sealed record HouseholdMemberDto(

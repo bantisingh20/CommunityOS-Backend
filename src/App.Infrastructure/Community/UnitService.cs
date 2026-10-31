@@ -58,6 +58,7 @@ public sealed class UnitService(
             .Filterable("unitStatus", u => u.UnitStatus)
             .Filterable("floor", u => u.Floor)
             .Filterable("hierarchyNodeId", u => u.HierarchyNodeId)
+            .Filterable("communityId", u => u.CommunityId)
             .Searchable(u => u.UnitNumber);
 
     public async Task<UnitDto> CreateAsync(CreateUnitRequest request, CancellationToken cancellationToken = default)
@@ -194,14 +195,21 @@ public sealed class UnitService(
         return unit is null ? null : ToDto(unit);
     }
 
-    public Task<PagedData<UnitDto>> ListAsync(ListQueryParameters parameters, CancellationToken cancellationToken = default)
+    public Task<PagedData<UnitDto>> ListAsync(ListQueryParameters parameters, bool availableForOwner = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        // Tenant-scoped by the global query filter (Req 14.5): the caller only sees units in their
-        // authorized communities. The soft-delete filter excludes archived units; a status filter
-        // rides the (CommunityId, UnitStatus) index.
-        return db.Units.AsNoTracking().ToPagedResultAsync(
+        var source = db.Units.AsNoTracking();
+
+        if (availableForOwner)
+        {
+            source = source.Where(u => !db.HouseholdMembers
+                .Where(h => h.UnitId == u.Id && h.EndDate == null)
+                .Join(db.Residents, h => h.ResidentId, r => r.Id, (h, r) => r.ResidentType)
+                .Any(t => t == "owner"));
+        }
+
+        return source.ToPagedResultAsync(
             parameters, QueryConfig, ToDto, pageSizePolicy, executor, cancellationToken);
     }
 

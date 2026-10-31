@@ -124,6 +124,10 @@ public static class DependencyInjection
 
         services.AddScoped<IParkingService, ParkingService>();
 
+        services.AddScoped<App.Application.MaintenanceBilling.IMaintenanceBillingService, App.Infrastructure.MaintenanceBilling.MaintenanceBillingService>();
+
+        services.AddScoped<App.Application.MyTasks.IMyTasksService, App.Infrastructure.MyTasks.MyTasksService>();
+
         services.AddScoped<IAnnouncementService, AnnouncementService>();
 
         services.TryAddScoped<IAccessControlIntegration, LoggingAccessControlIntegration>();

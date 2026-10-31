@@ -50,6 +50,14 @@ public class VisitPass : TenantOwnedEntity, IUnitScoped
     /// </summary>
     public string QrToken { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Opaque, high-entropy token for the PUBLIC shareable pass link (view-only). Distinct from
+    /// <see cref="QrToken"/> so the gate-scan secret is never exposed in a shared URL/SMS. Anyone
+    /// with this token can VIEW the pass (name, photo, QR for the gate, window) but it is not itself
+    /// a gate credential.
+    /// </summary>
+    public string PublicToken { get; set; } = string.Empty;
+
     
     public string OtpHash { get; set; } = string.Empty;
 

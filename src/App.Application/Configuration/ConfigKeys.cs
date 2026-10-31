@@ -208,6 +208,8 @@ public static class ConfigKeys
     /// to a seeded platform default when unset.
     /// </summary>
     public const string EvReservationMaxConcurrentPerUnit = "parking.ev.maxConcurrentPerUnit";
+
+    public const string MaintenanceBillReminderDaysBeforeDue = "maintenance.bill.reminderDaysBeforeDue";
 }
 
 /// <summary>
@@ -664,4 +666,10 @@ public static class MasterDataKeys
     /// against the editable list, not a frozen enum.
     /// </summary>
     public const string ResidentEventStatus = "Resident_Event_Status";
+
+    public const string MaintenanceBillStatus = "Maintenance_Bill_Status";
+
+    public const string MaintenancePaymentMethod = "Maintenance_Payment_Method";
+
+    public const string MaintenancePaymentStatus = "Maintenance_Payment_Status";
 }

@@ -9,6 +9,12 @@ public interface IGateService
 
     Task<CreateVisitPassResult> CreateVisitPassAsync(CreateVisitPassRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Anonymous public view of a pass by its opaque PublicToken (no tenant context). Null when not found.</summary>
+    Task<PublicVisitPassDto?> GetPublicPassAsync(string publicToken, CancellationToken cancellationToken = default);
+
+    /// <summary>Admin-triggered share: enqueue the public pass link over the requested channels (SMS/WhatsApp/email).</summary>
+    Task<SharePassResult> SharePassAsync(Guid passId, SharePassRequest request, CancellationToken cancellationToken = default);
+
     Task<VisitPassValidity> ResolveDefaultValidityAsync(Guid? communityId, CancellationToken cancellationToken = default);
     
     Task<VerifyVisitPassResult> VerifyVisitPassAsync(VerifyVisitPassRequest request, CancellationToken cancellationToken = default);

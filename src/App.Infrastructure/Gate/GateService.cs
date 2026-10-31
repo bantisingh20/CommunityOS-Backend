@@ -5,11 +5,13 @@ using App.Application.Audit;
 using App.Application.Auth;
 using App.Application.Config;
 using App.Application.Exceptions;
+using App.Application.Files;
 using App.Application.Gate;
 using App.Application.Messaging;
 using App.Application.Notifications;
 using App.Application.Querying;
 using App.Contracts.Envelope;
+using App.Domain.Files;
 using App.Domain.Gate;
 using App.Domain.Identity;
 using App.Infrastructure.Persistence;
@@ -33,6 +35,7 @@ public sealed class GateService(
     ISecurityOpsService securityOps,
     IPageSizePolicy pageSizePolicy,
     IAsyncQueryExecutor executor,
+    IFileBlobStore blobStore,
     ITenantContext tenant)
     : IGateService
 {
@@ -160,6 +163,7 @@ public sealed class GateService(
             VisitDateUtc = request.VisitDateUtc,
             PhotoFileId = request.PhotoFileId,
             OtpHash = hasher.Hash(otp),
+            PublicToken = GenerateQrToken(),
             ValidFromUtc = validFrom,
             ValidUntilUtc = validUntil,
             MaxUses = maxUses,
@@ -217,6 +221,149 @@ public sealed class GateService(
         {
             await db.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private const string PublicBaseUrlKey = "gate.visitPass.publicBaseUrl";
+    private const string DefaultPublicBaseUrl = "http://localhost:5173";
+
+    public async Task<PublicVisitPassDto?> GetPublicPassAsync(string publicToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(publicToken))
+        {
+            return null;
+        }
+
+        var pass = await db.VisitPasses.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(p => p.PublicToken == publicToken && !p.IsDeleted, cancellationToken);
+        if (pass is null)
+        {
+            return null;
+        }
+
+        var now = clock.UtcNow;
+        var isValidNow =
+            string.Equals(pass.Status, VisitPassStatuses.Active, StringComparison.Ordinal) &&
+            pass.UseCount < pass.MaxUses &&
+            now >= pass.ValidFromUtc &&
+            now <= pass.ValidUntilUtc;
+
+        string? unitNumber = null;
+        if (pass.UnitId is { } unitId)
+        {
+            unitNumber = await db.Units.IgnoreQueryFilters().AsNoTracking()
+                .Where(u => u.Id == unitId).Select(u => u.UnitNumber)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        string? communityName = null;
+        string? organizationName = null;
+        var community = await db.Communities.IgnoreQueryFilters().AsNoTracking()
+            .Where(c => c.Id == pass.CommunityId)
+            .Select(c => new { c.Name, c.OrganizationId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (community is not null)
+        {
+            communityName = community.Name;
+            organizationName = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+                .Where(o => o.Id == community.OrganizationId).Select(o => o.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var photoDataUrl = await ReadPhotoDataUrlAsync(pass.PhotoFileId, cancellationToken);
+
+        return new PublicVisitPassDto(
+            pass.VisitorName,
+            photoDataUrl,
+            pass.QrToken,
+            pass.ValidFromUtc,
+            pass.ValidUntilUtc,
+            pass.Status,
+            isValidNow,
+            pass.NumberOfPersons,
+            pass.WhomToMeet,
+            pass.VehicleNumber,
+            unitNumber,
+            communityName,
+            organizationName);
+    }
+
+    private async Task<string?> ReadPhotoDataUrlAsync(Guid? photoFileId, CancellationToken cancellationToken)
+    {
+        if (photoFileId is not { } fileId)
+        {
+            return null;
+        }
+        var file = await db.Set<StoredFile>().IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == fileId && !f.IsDeleted, cancellationToken);
+        if (file is null)
+        {
+            return null;
+        }
+        await using var stream = await blobStore.OpenAsync(file.StorageKey, cancellationToken);
+        if (stream is null)
+        {
+            return null;
+        }
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms, cancellationToken);
+        var base64 = Convert.ToBase64String(ms.ToArray());
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+        return $"data:{contentType};base64,{base64}";
+    }
+
+    public async Task<SharePassResult> SharePassAsync(Guid passId, SharePassRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!await authorizationGuard.HasPermissionAsync(PermissionAction.Create, "VisitPass", cancellationToken))
+        {
+            throw new ForbiddenException("You do not have permission to share a visit pass.");
+        }
+
+        var pass = await db.VisitPasses.FirstOrDefaultAsync(p => p.Id == passId, cancellationToken)
+            ?? throw new NotFoundException("Visit pass not found.");
+        authorizationGuard.EnsureCommunityAuthorized(pass.CommunityId);
+
+        var baseUrl = (await config.GetStringAsync(PublicBaseUrlKey, DefaultPublicBaseUrl, pass.CommunityId, cancellationToken)).TrimEnd('/');
+        var publicUrl = $"{baseUrl}/pass/{pass.PublicToken}";
+
+        var toPhone = string.IsNullOrWhiteSpace(request.ToPhone) ? pass.Phone : request.ToPhone.Trim();
+        var toEmail = string.IsNullOrWhiteSpace(request.ToEmail) ? pass.Email : request.ToEmail.Trim();
+
+        var validUntil = pass.ValidUntilUtc.ToString("u");
+        var message =
+            $"Your visit pass for {pass.VisitorName}. View it here: {publicUrl} (valid until {validUntil} UTC).";
+
+        var smsQueued = false;
+        var whatsAppQueued = false;
+        var emailQueued = false;
+
+        if (request.Sms && !string.IsNullOrWhiteSpace(toPhone))
+        {
+            try { await messages.QueueSmsAsync(toPhone, message, cancellationToken); smsQueued = true; }
+            catch (ValidationException) { }
+        }
+        if (request.WhatsApp && !string.IsNullOrWhiteSpace(toPhone))
+        {
+            try { await messages.QueueWhatsAppAsync(toPhone, message, cancellationToken); whatsAppQueued = true; }
+            catch (ValidationException) { }
+        }
+        if (request.Email && !string.IsNullOrWhiteSpace(toEmail))
+        {
+            try
+            {
+                await messages.QueueEmailAsync(toEmail, "Your visit pass", $"Hello {pass.VisitorName},\n\n{message}\n\nThank you.", cancellationToken);
+                emailQueued = true;
+            }
+            catch (ValidationException) { }
+        }
+
+        if (smsQueued || whatsAppQueued || emailQueued)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return new SharePassResult(publicUrl, smsQueued, whatsAppQueued, emailQueued);
     }
 
     public async Task<VerifyVisitPassResult> VerifyVisitPassAsync(VerifyVisitPassRequest request, CancellationToken cancellationToken = default)
@@ -1402,6 +1549,10 @@ public sealed class GateService(
         for (var attempt = 1; ; attempt++)
         {
             pass.QrToken = GenerateQrToken();
+            if (string.IsNullOrEmpty(pass.PublicToken) || attempt > 1)
+            {
+                pass.PublicToken = GenerateQrToken();
+            }
             db.VisitPasses.Add(pass);
             try
             {
@@ -1497,7 +1648,8 @@ public sealed class GateService(
     private static VisitPassDto ToDto(VisitPass p) =>
         new(p.Id, p.CommunityId, p.HostUnitId, p.HostResidentId, p.VisitorName, p.Phone, p.Email,
             p.VehicleNumber, p.VehicleType, p.NumberOfPersons, p.WhomToMeet, p.VisitDateUtc, p.PhotoFileId,
-            p.QrToken, p.ValidFromUtc, p.ValidUntilUtc, p.MaxUses, p.UseCount, p.Status);
+            p.QrToken, p.ValidFromUtc, p.ValidUntilUtc, p.MaxUses, p.UseCount, p.Status,
+            PublicToken: p.PublicToken);
 
     private static VisitorDto ToDto(Visitor v) =>
         new(v.Id, v.CommunityId, v.HostUnitId, v.Name, v.Phone, v.Email, v.Category, v.PhotoFileId,
